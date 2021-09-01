@@ -3,7 +3,13 @@ package cosmos
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/client/config"
+	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
+	"github.com/cosmos/cosmos-sdk/x/auth/tx"
+	types2 "github.com/cosmos/cosmos-sdk/x/auth/types"
+	types3 "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"net/http"
 	"net/url"
 	"time"
@@ -12,12 +18,10 @@ import (
 	"github.com/renproject/multichain/api/address"
 	"github.com/renproject/pack"
 
-	cliContext "github.com/cosmos/cosmos-sdk/client/context"
+	cliContext "github.com/cosmos/cosmos-sdk/client"
 	cliRpc "github.com/cosmos/cosmos-sdk/client/rpc"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/auth/client/utils"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
 )
 
@@ -96,13 +100,14 @@ func (opts ClientOptions) WithCoinDenom(coinDenom pack.String) ClientOptions {
 // interface exposed by a lightclient node.
 type Client struct {
 	opts   ClientOptions
-	cliCtx cliContext.CLIContext
-	cdc    *codec.Codec
+	cliCtx cliContext.Context
+	cdc    codec.Codec
+	txConfig cliContext.TxConfig
 	hrp    string
 }
 
 // NewClient returns a new Client.
-func NewClient(opts ClientOptions, cdc *codec.Codec, hrp string) *Client {
+func NewClient(opts ClientOptions, cdc codec.Codec, txConfig cliContext.TxConfig, hrp string) *Client {
 	httpClient, err := rpchttp.NewWithClient(
 		string(opts.Host),
 		"websocket",
@@ -117,14 +122,14 @@ func NewClient(opts ClientOptions, cdc *codec.Codec, hrp string) *Client {
 	if err != nil {
 		panic(err)
 	}
-
-	cliCtx := cliContext.NewCLIContext().WithCodec(cdc).WithClient(httpClient).WithTrustNode(true)
+	cliCtx := cliContext.GetClientContextFromCmd(config.Cmd()).WithCodec(cdc).WithClient(httpClient)
 
 	return &Client{
 		opts:   opts,
 		cliCtx: cliCtx,
 		cdc:    cdc,
 		hrp:    hrp,
+		txConfig:txConfig,
 	}
 }
 
@@ -143,12 +148,18 @@ func (client *Client) LatestBlock(ctx context.Context) (pack.U64, error) {
 
 // Tx query transaction with txHash
 func (client *Client) Tx(ctx context.Context, txHash pack.Bytes) (account.Tx, pack.U64, error) {
-	res, err := utils.QueryTx(client.cliCtx, hex.EncodeToString(txHash[:]))
+
+	res, err := tx.QueryTx(client.cliCtx, hex.EncodeToString(txHash[:]))
 	if err != nil {
 		return &StdTx{}, pack.NewU64(0), fmt.Errorf("query fail: %v", err)
 	}
 
-	authStdTx := res.Tx.(auth.StdTx)
+	var authStdTx legacytx.StdTx
+	err= json.Unmarshal(res.Tx.Value, &authStdTx)
+	if err != nil {
+		return &StdTx{}, pack.NewU64(0), fmt.Errorf("parse tx failed: %v", err)
+	}
+
 	if res.Code != 0 {
 		return &StdTx{}, pack.NewU64(0), fmt.Errorf("tx failed code: %v, log: %v", res.Code, res.RawLog)
 	}
@@ -194,9 +205,8 @@ func (client *Client) AccountNonce(ctx context.Context, addr address.Address) (p
 			return pack.U256{}, ctx.Err()
 		default:
 		}
-
-		accGetter := auth.NewAccountRetriever(client.cliCtx)
-		acc, err := accGetter.GetAccount(Address(cosmosAddr).AccAddress())
+		accGetter := types2.AccountRetriever{}
+		acc, err := accGetter.GetAccount(client.cliCtx, Address(cosmosAddr).AccAddress())
 		if err != nil {
 			time.Sleep(client.opts.TimeoutRetry)
 			continue
@@ -220,8 +230,8 @@ func (client *Client) AccountNumber(ctx context.Context, addr address.Address) (
 		default:
 		}
 
-		accGetter := auth.NewAccountRetriever(client.cliCtx)
-		acc, err := accGetter.GetAccount(Address(cosmosAddr).AccAddress())
+		accGetter := types2.AccountRetriever{}
+		acc, err := accGetter.GetAccount(client.cliCtx,Address(cosmosAddr).AccAddress())
 		if err != nil {
 			time.Sleep(client.opts.TimeoutRetry)
 			continue
@@ -244,14 +254,12 @@ func (client *Client) AccountBalance(ctx context.Context, addr address.Address) 
 		default:
 		}
 
-		accGetter := auth.NewAccountRetriever(client.cliCtx)
-		acc, err := accGetter.GetAccount(Address(cosmosAddr).AccAddress())
+		params := types3.NewQueryBalanceRequest(Address(cosmosAddr).AccAddress(),string(client.opts.CoinDenom))
+		resp, err :=types3.NewQueryClient(client.cliCtx).Balance(context.Background(), params)
 		if err != nil {
-			time.Sleep(client.opts.TimeoutRetry)
-			continue
+			return pack.U256{}, fmt.Errorf("failed to get balance for %v", addr)
 		}
-
-		balance := acc.GetCoins().AmountOf(string(client.opts.CoinDenom)).BigInt()
+		balance := resp.Balance.Amount.BigInt()
 
 		// If the balance exceeds `MaxU256`, return an error.
 		if pack.MaxU256.Int().Cmp(balance) == -1 {

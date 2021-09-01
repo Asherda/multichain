@@ -3,6 +3,7 @@ package cosmos
 import (
 	"context"
 	"fmt"
+	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/simapp"
@@ -52,9 +53,8 @@ type txBuilder struct {
 // Cosmos based transactions.
 func NewTxBuilder(options TxBuilderOptions, client *Client) account.TxBuilder {
 	if client.cdc == nil {
-		client.cdc = simapp.MakeCodec()
+		client.cdc = simapp.MakeTestEncodingConfig().Marshaler
 	}
-
 	return txBuilder{
 		client:  client,
 		chainID: options.ChainID,
@@ -91,36 +91,26 @@ func (builder txBuilder) BuildTx(ctx context.Context, from, to address.Address, 
 		Amount: pack.NewU64(gasPrice.Mul(gasLimit).Int().Uint64()),
 	}}
 
-	accountNumber, err := builder.client.AccountNumber(ctx, from)
+	//accountNumber, err := builder.client.AccountNumber(ctx, from)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	txBuilder := builder.client.txConfig.NewTxBuilder()
+	txBuilder.SetFeeAmount(fees.Coins())
+	txBuilder.SetGasLimit(gasLimit.Int().Uint64())
+	txBuilder.SetMemo(string(payload))
+	txBuilder.SetMsgs(sendMsg.Msg())
+	signMsg, err := newSign(sdkMsgs)
 	if err != nil {
 		return nil, err
 	}
-
-	txBuilder := auth.NewTxBuilder(
-		utils.GetTxEncoder(builder.client.cdc),
-		accountNumber.Uint64(),
-		nonce.Int().Uint64(),
-		gasLimit.Int().Uint64(),
-		0,
-		false,
-		builder.chainID.String(),
-		string(payload),
-		fees.Coins(),
-		types.DecCoins{},
-	)
-
-	sdkMsgs := []types.Msg{sendMsg.Msg()}
-
-	signMsg, err := txBuilder.BuildSignMsg(sdkMsgs)
-	if err != nil {
-		return nil, err
-	}
-
+legacytx.StdSignMsg{}()
 	return &StdTx{
 		msgs:    []MsgSend{sendMsg},
 		fee:     parseStdFee(signMsg.Fee),
 		memo:    pack.String(payload.String()),
-		cdc:     builder.client.cdc,
+		cdc:     &builder.client.cdc,
 		signMsg: signMsg,
 	}, nil
 }

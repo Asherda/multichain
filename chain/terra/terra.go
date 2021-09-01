@@ -4,7 +4,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types"
 	"github.com/renproject/multichain/api/account"
 	"github.com/renproject/multichain/chain/cosmos"
-	"github.com/terra-project/core/app"
+	"github.com/terra-money/core/app"
 )
 
 type (
@@ -44,7 +44,8 @@ func init() {
 
 // NewClient returns returns a new Client with Terra codec.
 func NewClient(opts ClientOptions) *Client {
-	return cosmos.NewClient(opts, app.MakeCodec(), "terra")
+	config := app.MakeEncodingConfig()
+	return cosmos.NewClient(opts, config.Marshaler, config.TxConfig, "terra")
 }
 
 // NewTxBuilder returns an implementation of the transaction builder interface
