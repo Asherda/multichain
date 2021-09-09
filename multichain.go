@@ -113,6 +113,7 @@ const (
 	LUNA   = Asset("LUNA")   // Luna
 	MATIC  = Asset("MATIC")  // Matic PoS (Polygon)
 	SOL    = Asset("SOL")    // Solana
+	VRSC   = Asset("VRSC")   // Verus
 	ZEC    = Asset("ZEC")    // Zcash
 
 	REN  = Asset("REN")  // Ren
@@ -228,7 +229,7 @@ func (asset Asset) OriginChain() Chain {
 // ChainType returns the chain-type (Account or UTXO) for the given asset
 func (asset Asset) ChainType() ChainType {
 	switch asset {
-	case BCH, BTC, DGB, DOGE, ZEC:
+	case BCH, BTC, DGB, DOGE, VRSC, ZEC:
 		return ChainTypeUTXOBased
 	case ArbETH, AVAX, BNB, ETH, FIL, FTM, GLMR, LUNA, MATIC, REN, SOL, USDC:
 		return ChainTypeAccountBased
@@ -310,6 +311,7 @@ const (
 	Polygon           = Chain("Polygon")
 	Solana            = Chain("Solana")
 	Terra             = Chain("Terra")
+	Verus             = Chain("Verus")
 	Zcash             = Chain("Zcash")
 
 	Kovan  = Chain("Kovan")
@@ -408,6 +410,8 @@ func (chain Chain) NativeAsset() Asset {
 		return SOL
 	case Terra:
 		return LUNA
+	case Verus:
+		return VRSC
 	case Zcash:
 		return ZEC
 	case Arbitrum:

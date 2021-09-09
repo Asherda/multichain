@@ -45,6 +45,7 @@ import (
 	"github.com/renproject/multichain/chain/dogecoin"
 	"github.com/renproject/multichain/chain/filecoin"
 	"github.com/renproject/multichain/chain/terra"
+	"github.com/renproject/multichain/chain/verus"
 	"github.com/renproject/multichain/chain/zcash"
 	"github.com/renproject/pack"
 	"github.com/renproject/surge"
@@ -68,6 +69,7 @@ var (
 	testFTM   = flag.Bool("ftm", false, "Pass this flag to test Fantom")
 	testLUNA  = flag.Bool("luna", false, "Pass this flag to test Terra")
 	testZEC   = flag.Bool("zec", false, "Pass this flag to test Zcash")
+	testVRSC  = flag.Bool("vrsc", false, "Pass this flag to test Verus")
 )
 
 var _ = Describe("Multichain", func() {
@@ -96,6 +98,7 @@ var _ = Describe("Multichain", func() {
 	testFlags[multichain.Fantom] = *testFTM
 	testFlags[multichain.Terra] = *testLUNA
 	testFlags[multichain.Zcash] = *testZEC
+	testFlags[multichain.Verus] = *testVRSC
 
 	//
 	// Multichain Configs
@@ -174,6 +177,10 @@ var _ = Describe("Multichain", func() {
 				{
 					multichain.Dogecoin,
 					multichain.DOGE,
+				},
+				{
+					multichain.Verus,
+					multichain.VRSC,
 				},
 				{
 					multichain.Zcash,
@@ -1064,6 +1071,26 @@ var _ = Describe("Multichain", func() {
 				},
 				dogecoin.NewTxBuilder(&dogecoin.RegressionNetParams),
 				multichain.Dogecoin,
+			},
+			{
+				"VERUS-PK",
+				func(pkh []byte) (btcutil.Address, error) {
+					addr, err := verus.NewAddressPubKeyHash(pkh, &verus.RegressionNetParams)
+					return addr, err
+				},
+				func(script []byte) (btcutil.Address, error) {
+					addr, err := verus.NewAddressScriptHash(script, &verus.RegressionNetParams)
+					return addr, err
+				},
+				pack.String("http://0.0.0.0:45255"),
+				func(rpcURL pack.String, pkhAddr btcutil.Address) (multichain.UTXOClient, []multichain.UTXOutput, func(context.Context, pack.Bytes) (int64, error)) {
+					client := verus.NewClient(verus.DefaultClientOptions())
+					outputs, err := client.UnspentOutputs(ctx, 0, 999999999, multichain.Address(pkhAddr.EncodeAddress()))
+					Expect(err).NotTo(HaveOccurred())
+					return client, outputs, client.Confirmations
+				},
+				verus.NewTxBuilder(&verus.RegressionNetParams, 1000000),
+				multichain.Verus,
 			},
 			{
 				"ZCASH_PK",
